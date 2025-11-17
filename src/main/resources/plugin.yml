@@ -1,0 +1,24 @@
+name: KSR-RealWeatherSync
+version: "1.0.0"
+main: ch.ksrminecraft.kSRRealWeatherSync.KSRRealWeatherSync
+api-version: "1.21"
+authors:
+  - Timy Liniger
+website: "https://ksrminecraft.ch/"
+description: "Synchronisiert das reale Wetter eines Ortes mit Minecraft."
+
+# RealisticSeasons wird NICHT erzwungen (kein Fehler wenn nicht installiert)
+softdepend:
+  - RealisticSeasons
+
+commands:
+  ksrweather:
+    description: "Verwaltung des Wetter-Synchronisationsplugins"
+    usage: "/ksrweather <status|reload|force|current>"
+    aliases: [weather, realweather]
+    permission: ksrrealweathersync.admin
+
+permissions:
+  ksrrealweathersync.admin:
+    description: "Erlaubt Zugriff auf alle Befehle von KSR-RealWeatherSync"
+    default: op

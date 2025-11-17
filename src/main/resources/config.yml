@@ -1,0 +1,125 @@
+# ======================================================================
+#  KSR-RealWeatherSync – Konfiguration
+# ======================================================================
+
+# ----------------------------------------------------------------------
+# Standort, dessen reales Wetter verwendet wird
+# ----------------------------------------------------------------------
+location:
+  latitude: 47.06
+  longitude: 8.279999
+  timezone: Europe/Berlin
+
+
+# ----------------------------------------------------------------------
+# API-Konfiguration
+# ----------------------------------------------------------------------
+api:
+
+  # Basis der API (falls Open-Meteo später Versionen ändert, leicht anpassbar)
+  base-url: "https://api.open-meteo.com/v1/forecast"
+
+  # Welche Datenfelder sollen abgerufen werden?
+  # Diese Namen entsprechen EXAKT den Feldern, die Open-Meteo liefert.
+  fields:
+    - temperature_2m
+    - precipitation
+    - rain
+    - showers
+    - snowfall
+    - weather_code
+    - is_day
+
+  # Einheiteneinstellungen (optional, nur für Debugging oder spätere Nutzung)
+  units:
+    temperature_2m: "°C"
+    precipitation: "mm"
+    rain: "mm"
+    showers: "mm"
+    snowfall: "cm"
+    weather_code: "wmo"
+    is_day: "binary"
+
+  # Open-Meteo liefert im Standard 15-Minuten Schritte → 900 Sekunden
+  model-interval-seconds: 900
+
+  # Fehlerverhalten der API
+  fail-behavior:
+    keep-current-weather: true   # true = bei API-Error Wetter nicht ändern
+    log-errors: true             # Fehlermeldungen ausgeben
+
+
+# ----------------------------------------------------------------------
+# Wetter-Synchronisation
+# ----------------------------------------------------------------------
+weather-sync:
+  enabled: true
+  worlds:
+    - world
+
+
+# ----------------------------------------------------------------------
+# Update-Intervall
+# ----------------------------------------------------------------------
+update-interval: 10   # Minuten
+
+
+# ----------------------------------------------------------------------
+# Wettercode-Interpretation (konfigurierbar!)
+# ----------------------------------------------------------------------
+weather-codes:
+
+  # Klarer Himmel
+  clear:
+    - 0  # cloudless
+    - 1  # mainly clear
+    - 2  # partly cloudy
+
+  # Bewölkt (optional)
+  cloudy:
+    - 3  # overcast
+
+  # Regen / Schauer
+  rain:
+    - 51  # drizzle
+    - 53
+    - 55
+    - 61  # rain
+    - 63
+    - 65
+    - 80  # rain showers
+    - 81
+    - 82
+
+  # Schnee
+  snow:
+    - 71  # snow fall
+    - 73
+    - 75
+    - 85  # snow showers
+    - 86
+
+  # Gewitter
+  thunder:
+    - 95  # thunderstorm
+    - 96  # thunderstorm + hail
+    - 99
+
+
+# ----------------------------------------------------------------------
+# Debug-Modus
+# ----------------------------------------------------------------------
+logging:
+  debug: false
+
+# ----------------------------------------------------------------------
+# RealisticSeasons Integration
+# ----------------------------------------------------------------------
+realistic-seasons:
+  enabled: true    # true = echte Temperatur an RealisticSeasons übergeben
+
+# ----------------------------------------------------------------------
+# Synchronisation der Ingame-Zeit
+# ----------------------------------------------------------------------
+time-sync:
+  enabled: false  # true = Ingame-Zeit folgt der echten Uhrzeit
