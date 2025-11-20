@@ -16,122 +16,153 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Hook zur Integration mit dem RealisticSeasons Plugin.
- * Wendet die reale Temperatur (Open-Meteo API) auf Spieler an,
- * indem die Temperaturdifferenz als Temperatureffekt angewendet wird.
+ * Stabile Integration mit RealisticSeasons:
+ *
+ * - Wendet reale Temperatur als Temperatureffekt an
+ * - Fängt alle RS-Probleme sicher ab
+ * - Kein Log-Spam
+ * - Temperatureffekt wird nur gesetzt, wenn RS-Daten bereit sind
  */
 public class RealisticSeasonsHook {
 
     private final SeasonsAPI api;
     private final PluginConfig cfg;
 
-    // Aktive Temperatureffekte speichern
+    // Speichert aktive Effekte pro Spieler
     private final Map<UUID, TemperatureEffect> activeEffects = new HashMap<>();
+
+    // Warnung nur einmal anzeigen
+    private boolean warnedAboutRSTemp = false;
 
     public RealisticSeasonsHook(PluginConfig cfg) {
         this.api = SeasonsAPI.getInstance();
         this.cfg = cfg;
 
-        Debug.log("RealisticSeasonsHook initialisiert.");
+        Debug.log("[RS-Hook] Initialisiert.");
     }
 
     /**
-     * Wird beim Plugin-Disable aufgerufen.
-     * Entfernt ALLE aktiven Temperatureffekte sauber.
+     * Entfernt beim Plugin-Disable ALLE Temperatureffekte.
      */
     public void shutdown() {
-        Debug.log("RS-Hook: Entferne alle aktiven Temperatureffekte...");
+        Debug.log("[RS-Hook] Entferne sämtliche aktiven Temperatureffekte...");
 
         for (TemperatureEffect eff : activeEffects.values()) {
             try {
                 eff.cancel();
             } catch (Exception ignored) {}
         }
-
         activeEffects.clear();
     }
 
     /**
-     * Entfernt den Temperatureffekt eines einzelnen Spielers.
+     * Entfernt Temperatureffekt eines einzelnen Spielers
      */
     public void clearPlayer(Player p) {
         TemperatureEffect old = activeEffects.remove(p.getUniqueId());
         if (old != null) {
             try {
                 old.cancel();
-                Debug.log("RS-Hook: Temperatur-Effekt für " + p.getName() + " entfernt.");
+                Debug.log("[RS-Hook] Effekt für Spieler " + p.getName() + " entfernt.");
             } catch (Exception ignored) {}
         }
     }
 
     /**
-     * Wendet die reale Temperatur auf alle Spieler an.
-     * Nur aktiv, wenn:
-     *  - Integration in config aktiviert ist
-     *  - RealisticSeasons installiert ist
+     * Kernmethode: Wendet die reale Temperatur auf passende Spieler an.
      */
     public void applyRealTemperature(WeatherData data) {
 
-        // Check ob in config aktiviert
+        // Sync deaktiviert?
         if (!cfg.realisticSeasonsEnabled) {
-            Debug.log("RS-Hook deaktiviert (config).");
-            return;
-        }
-
-        if (data == null) {
-            Debug.warn("RS-Hook: WeatherData == null");
             return;
         }
 
         if (api == null) {
-            Debug.warn("RS-Hook: SeasonsAPI == null → kein Sync möglich.");
+            Debug.warn("[RS-Hook] SeasonsAPI == null → keine Integration möglich.");
+            return;
+        }
+
+        if (data == null) {
+            Debug.warn("[RS-Hook] WeatherData == null → kein Temperatur-Sync.");
             return;
         }
 
         double realTemp = data.getTemperature2m();
-        Debug.log("RS-Hook: Reale Temperatur = " + realTemp + "°C");
+        Debug.log("[RS-Hook] Reale Temperatur laut API = " + realTemp + "°C");
 
         for (Player p : Bukkit.getOnlinePlayers()) {
 
-            World w = p.getWorld();
+            World world = p.getWorld();
 
             // Nur konfigurierte Welten
-            if (!cfg.weatherSyncWorlds.contains(w.getName())) {
-                Debug.log("RS-Hook: Welt " + w.getName() + " nicht freigegeben → " + p.getName() + " übersprungen.");
+            if (!cfg.weatherSyncWorlds.contains(world.getName())) {
                 continue;
             }
 
+            // --------------------------------------------------------------------
+            // Schritt 1: RS-Temperatur abrufen (sicher!)
+            // --------------------------------------------------------------------
             int rsTemp;
+
             try {
                 rsTemp = api.getAirTemperature(p.getLocation());
             } catch (Exception e) {
-                Debug.warn("RS-Hook: Fehler bei getAirTemperature für " + p.getName() + ": " + e.getMessage());
+
+                if (!warnedAboutRSTemp) {
+                    warnedAboutRSTemp = true;
+
+                    Debug.warn(
+                            "[RS-Hook] Achtung: RealisticSeasons ist noch nicht bereit! " +
+                                    "getAirTemperature liefert Fehler für Spieler " + p.getName() + ". Details: " + e.getMessage()
+                    );
+                }
                 continue;
             }
 
+            // Wenn RealisticSeasons "NONE" Season hat → Temperatur uninitialisiert
+            if (rsTemp == 0 && !warnedAboutRSTemp) {
+                warnedAboutRSTemp = true;
+                Debug.warn("[RS-Hook] RS liefert 0°C (NONE Season oder RS noch uninitialisiert). Sync wird vorübergehend pausiert.");
+                continue;
+            }
+
+            // --------------------------------------------------------------------
+            // Schritt 2: Temperaturdifferenz berechnen
+            // --------------------------------------------------------------------
             int modifier = (int) Math.round(realTemp - rsTemp);
 
-            Debug.log("RS-Hook → " + p.getName()
-                    + " RS=" + rsTemp + "°C, REAL=" + realTemp + "°C"
-                    + " Δ=" + modifier);
+            Debug.log("[RS-Hook] " + p.getName() +
+                    " RS=" + rsTemp + "°C, REAL=" + realTemp + "°C → Δ=" + modifier);
 
-            // Kein Unterschied → nichts tun
+            // Kein Unterschied → kein Effekt nötig
             if (modifier == 0) {
+                clearPlayer(p);
                 continue;
             }
 
-            // Alten Effekt entfernen
+            // --------------------------------------------------------------------
+            // Schritt 3: Alten Effekt entfernen
+            // --------------------------------------------------------------------
             clearPlayer(p);
 
-            // Neuen Effekt anwenden
+            // --------------------------------------------------------------------
+            // Schritt 4: Neuen Effekt anwenden
+            // --------------------------------------------------------------------
             try {
-                TemperatureEffect effect = api.applyPermanentTemperatureEffect(p, modifier);
-                activeEffects.put(p.getUniqueId(), effect);
+                TemperatureEffect eff =
+                        api.applyPermanentTemperatureEffect(p, modifier);
 
-                Debug.log("RS-Hook: Neuer Temperatureffekt für " + p.getName()
-                        + " angewendet → Modifier=" + modifier);
+                activeEffects.put(p.getUniqueId(), eff);
+
+                Debug.log("[RS-Hook] Setze Temperatur-Effekt für " + p.getName() +
+                        " (Modifier=" + modifier + ")");
             } catch (Exception e) {
-                Debug.warn("RS-Hook: Fehler bei applyPermanentTemperatureEffect: " + e.getMessage());
+
+                if (!warnedAboutRSTemp) {
+                    warnedAboutRSTemp = true;
+                    Debug.warn("[RS-Hook] Fehler bei applyPermanentTemperatureEffect: " + e.getMessage());
+                }
             }
         }
     }
